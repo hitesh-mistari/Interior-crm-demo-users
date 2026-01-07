@@ -1,0 +1,39 @@
+.submenu {
+  min-width: 200px;
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid #e2e8f0; /* slate-200 */
+  border-radius: 12px;
+  background-color: #ffffff;
+  box-shadow: 0 16px 40px rgba(2, 6, 23, 0.12); /* soft premium */
+  padding: 6px;
+}
+
+.submenu-item {
+  width: 100%;
+  text-align: left;
+  font-size: 12px;
+  color: #334155; /* slate-700 */
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.submenu-item:hover {
+  background-color: #f8fafc; /* slate-50 */
+}
+
+.submenu-item.is-active {
+  background-color: #eef2ff; /* indigo-50-ish */
+  color: #0f172a; /* slate-900 */
+}
+
+@media (max-width: 640px) {
+  .submenu {
+    min-width: 160px;
+    padding: 4px;
+  }
+  .submenu-item {
+    padding: 8px 10px;
+  }
+}

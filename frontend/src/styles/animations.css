@@ -1,0 +1,77 @@
+@keyframes priorityUp {
+  0% {
+    transform: translateY(0);
+    box-shadow: none;
+  }
+
+  40% {
+    transform: translateY(-12px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08);
+  }
+
+  70% {
+    transform: translateY(-4px);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.06);
+  }
+
+  85% {
+    transform: translateY(-2px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+  }
+
+  100% {
+    transform: translateY(0);
+    box-shadow: none;
+  }
+}
+
+@keyframes priorityDown {
+  0% {
+    transform: translateY(0);
+    box-shadow: none;
+  }
+
+  40% {
+    transform: translateY(12px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08);
+  }
+
+  80% {
+    transform: translateY(3px);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.06);
+  }
+
+  100% {
+    transform: translateY(0);
+    box-shadow: none;
+  }
+}
+
+.priority-slide-up {
+  animation: priorityUp 0.45s ease-out both;
+  backface-visibility: hidden;
+}
+
+.priority-slide-down {
+  animation: priorityDown 0.45s ease-in both;
+  backface-visibility: hidden;
+}
+
+.priority-slide-up:focus-within,
+.priority-slide-down:focus-within {
+  outline: 2px solid rgba(59, 130, 246, 0.4);
+  outline-offset: -2px;
+}
+
+.priority-slide-up,
+.priority-slide-down {
+  will-change: transform, filter;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .priority-slide-up,
+  .priority-slide-down {
+    animation: none !important;
+  }
+}

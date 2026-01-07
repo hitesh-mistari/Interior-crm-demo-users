@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Offline - Artistic Engineers</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      padding: 48px;
+      max-width: 500px;
+      text-align: center;
+    }
+    .icon {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 24px;
+      background: #f3f4f6;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .icon svg {
+      width: 40px;
+      height: 40px;
+      color: #6b7280;
+    }
+    h1 {
+      color: #111827;
+      font-size: 28px;
+      margin-bottom: 16px;
+      font-weight: 700;
+    }
+    p {
+      color: #6b7280;
+      font-size: 16px;
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      background: #fef3c7;
+      border-radius: 8px;
+      color: #92400e;
+      font-weight: 500;
+      margin-top: 16px;
+    }
+    .pulse {
+      width: 8px;
+      height: 8px;
+      background: #f59e0b;
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .info {
+      margin-top: 32px;
+      padding: 20px;
+      background: #f9fafb;
+      border-radius: 8px;
+      text-align: left;
+    }
+    .info h2 {
+      color: #111827;
+      font-size: 16px;
+      margin-bottom: 12px;
+      font-weight: 600;
+    }
+    .info ul {
+      list-style: none;
+      padding-left: 0;
+    }
+    .info li {
+      color: #6b7280;
+      font-size: 14px;
+      padding: 8px 0;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .info li:last-child {
+      border-bottom: none;
+    }
+    .info li::before {
+      content: "✓";
+      color: #10b981;
+      font-weight: bold;
+      margin-right: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 2.829a4.978 4.978 0 01-1.414-2.83m-1.414 5.658a9 9 0 01-2.167-9.238m7.824 2.167a1 1 0 111.414 1.414m-1.414-1.414L3 3" />
+      </svg>
+    </div>
+    <h1>You're Offline</h1>
+    <p>It looks like you've lost your internet connection. Don't worry, you can still access your cached data and the app will sync automatically when you're back online.</p>
+    <div class="status">
+      <span class="pulse"></span>
+      <span>Waiting for connection...</span>
+    </div>
+    <div class="info">
+      <h2>Available Offline Features:</h2>
+      <ul>
+        <li>View cached projects and data</li>
+        <li>Create and edit entries locally</li>
+        <li>Access saved reports and documents</li>
+        <li>All changes sync when online</li>
+      </ul>
+    </div>
+  </div>
+  <script>
+    window.addEventListener('online', () => {
+      window.location.reload();
+    });
+  </script>
+</body>
+</html>

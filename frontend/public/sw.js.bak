@@ -1,0 +1,113 @@
+const CACHE_VERSION = 'v1';
+const CACHE_NAME = `artistic-engineers-${CACHE_VERSION}`;
+const OFFLINE_URL = '/offline.html';
+
+const STATIC_ASSETS = [
+  '/',
+  '/index.html',
+  '/offline.html',
+  '/manifest.json',
+  // Use valid maskable icon to avoid console warnings
+  '/icon-192-maskable.png',
+  '/icon-512.png'
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(STATIC_ASSETS);
+    }).then(() => {
+      return self.skipWaiting();
+    })
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames
+          .filter((name) => (name.startsWith('artistic-engineers-') || name.startsWith('deore-associates-')) && name !== CACHE_NAME)
+          .map((name) => caches.delete(name))
+      );
+    }).then(() => {
+      return self.clients.claim();
+    })
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+  const url = new URL(request.url);
+
+  // Handle navigations (HTML documents)
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request).catch(() => {
+        return caches.match(OFFLINE_URL);
+      })
+    );
+    return;
+  }
+
+  // Ignore non-http(s) schemes (e.g., chrome-extension) and non-GET requests
+  if ((url.protocol !== 'http:' && url.protocol !== 'https:') || request.method !== 'GET') {
+    return;
+  }
+
+  // Pass through API calls (with offline error fallback)
+  if (request.url.includes('/api/')) {
+    event.respondWith(
+      fetch(request).catch(() => {
+        return new Response(
+          JSON.stringify({ error: 'Offline', offline: true }),
+          {
+            headers: { 'Content-Type': 'application/json' },
+            status: 503
+          }
+        );
+      })
+    );
+    return;
+  }
+
+  // Only cache same-origin GET requests
+  if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  event.respondWith(
+    caches.match(request).then((response) => {
+      if (response) {
+        return response;
+      }
+
+      return fetch(request).then((response) => {
+        if (!response || response.status !== 200 || response.type !== 'basic') {
+          return response;
+        }
+
+        const responseToCache = response.clone();
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(request, responseToCache);
+        });
+
+        return response;
+      });
+    })
+  );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+
+  if (event.data && event.data.type === 'CACHE_URLS') {
+    event.waitUntil(
+      caches.open(CACHE_NAME).then((cache) => {
+        return cache.addAll(event.data.payload);
+      })
+    );
+  }
+});

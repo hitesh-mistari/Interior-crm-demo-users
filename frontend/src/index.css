@@ -1,0 +1,189 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Thin Horizontal Scrollbar for menus (phone & iPad) */
+/* Usage: add class 'thin-scrollbar' to any horizontal scroll container */
+:root {
+  /* Subtle thumb color matching slate theme; adjust if brand changes */
+  --scroll-thumb-color: rgba(15, 23, 42, 0.35);
+  /* slate-900 at ~35% */
+  --scroll-thumb-color-hover: rgba(15, 23, 42, 0.5);
+  --scroll-thumb-color-active: rgba(15, 23, 42, 0.65);
+  /* Global horizontal bar height for scrollbars */
+  --hbar-height: 2px;
+}
+
+.thin-scrollbar {
+  /* Smooth animation for navigation */
+  scroll-behavior: smooth;
+  /* Mobile momentum scrolling */
+  -webkit-overflow-scrolling: touch;
+  /* Prevent rubber-band cross propagation */
+  overscroll-behavior-x: contain;
+  /* Allow natural horizontal pan on touch */
+  touch-action: pan-x;
+  /* Keep layout stable when scrollbars appear */
+  scrollbar-gutter: stable both-edges;
+
+  /* Firefox scrollbar styling (height cannot be forced to 4px in Firefox) */
+  scrollbar-width: thin;
+  /* closest to 4px on Firefox */
+  scrollbar-color: transparent transparent;
+  /* hidden by default */
+}
+
+/* Show scrollbar thumb only during interaction via helper class */
+.thin-scrollbar.thin-scrollbar--visible {
+  scrollbar-color: var(--scroll-thumb-color) transparent;
+}
+
+/* WebKit-based browsers (Chrome, Safari, iOS/iPadOS Safari) */
+.thin-scrollbar::-webkit-scrollbar {
+  height: var(--hbar-height);
+  /* exact height for horizontal scrollbar */
+  background: transparent;
+  /* transparent track */
+}
+
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  /* transparent track per spec */
+}
+
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  /* hidden by default */
+  border-radius: 9999px;
+  transition: background-color 160ms ease;
+}
+
+/* Thumb becomes visible when scrolling (via toggled class) */
+.thin-scrollbar.thin-scrollbar--visible::-webkit-scrollbar-thumb {
+  background-color: var(--scroll-thumb-color);
+}
+
+/* Fallback visibility on hover/focus for non-touch pointer devices */
+.thin-scrollbar:hover {
+  scrollbar-color: var(--scroll-thumb-color) transparent;
+}
+
+.thin-scrollbar:hover::-webkit-scrollbar-thumb {
+  background-color: var(--scroll-thumb-color);
+}
+
+.thin-scrollbar:focus-within {
+  scrollbar-color: var(--scroll-thumb-color) transparent;
+}
+
+.thin-scrollbar:focus-within::-webkit-scrollbar-thumb {
+  background-color: var(--scroll-thumb-color);
+}
+
+/* Subtle states */
+.thin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scroll-thumb-color-hover);
+}
+
+.thin-scrollbar::-webkit-scrollbar-thumb:active {
+  background-color: var(--scroll-thumb-color-active);
+}
+
+/* Ensure the scrollbar does not block interactions with menu items */
+.thin-scrollbar * {
+  pointer-events: auto;
+}
+
+/* Header-only horizontal scrollbar: 3px height and slate theme color */
+.header-scrollbar {
+  /* Cross-device smooth pan and momentum */
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  scrollbar-gutter: stable both-edges;
+
+  /* Firefox styling */
+  scrollbar-width: thin;
+  scrollbar-color: #1e293b transparent;
+  /* slate-800 */
+}
+
+.header-scrollbar::-webkit-scrollbar {
+  height: var(--hbar-height);
+  /* consistent 2px height */
+  background: transparent;
+}
+
+.header-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.header-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #1e293b;
+  /* slate-800 */
+  border-radius: 9999px;
+}
+
+/* Global thin scrollbar Override as requested */
+@media (max-width: 768px) {
+  ::-webkit-scrollbar {
+    width: 3px;
+    height: 3px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: #e2e8f0;
+    /* slate-200 */
+    border-radius: 10px;
+  }
+}
+
+@layer utilities {
+  @keyframes sparkle-fall {
+    0% {
+      transform: translate(0, -20px) scale(0);
+      opacity: 0;
+    }
+
+    10% {
+      opacity: 1;
+      transform: translate(0, 0) scale(1);
+    }
+
+    100% {
+      transform: translate(var(--tw-translate-x), var(--tw-translate-y)) scale(0.5);
+      opacity: 0;
+    }
+  }
+
+  .animate-sparkle {
+    animation: sparkle-fall 2s ease-out forwards;
+  }
+}
+
+/* Modal Scrollbar Fixes for Mobile/Touch */
+.custom-scrollbar {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 999px;
+}
