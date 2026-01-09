@@ -4,16 +4,16 @@ import { query } from "../db";
 const router = express.Router();
 
 router.get("/analytics/financial-summary", async (req, res) => {
-    try {
-        // Generate dates for the last 6 months (inclusive of current month)
-        // We strive for strict consistency with the dashboard logic:
-        // Revenue = Total Payments Received (payments table)
-        // Expense = Total Expenses (expenses table + team_work_entries table)
+  try {
+    // Generate dates for the last 6 months (inclusive of current month)
+    // We strive for strict consistency with the dashboard logic:
+    // Revenue = Total Payments Received (payments table)
+    // Expense = Total Expenses (expenses table + team_work_entries table)
 
-        // We use a CTE to generate the last 6 months
-        // Then LEFT JOIN the aggregations
+    // We use a CTE to generate the last 6 months
+    // Then LEFT JOIN the aggregations
 
-        const sql = `
+    const sql = `
       WITH months AS (
         SELECT to_char(d, 'Mon') as month_label,
                date_trunc('month', d) as month_start,
@@ -30,7 +30,6 @@ router.get("/analytics/financial-summary", async (req, res) => {
           date_trunc('month', payment_date) as month_start,
           SUM(amount) as total_revenue
         FROM payments
-        WHERE deleted = FALSE
         GROUP BY 1
       ),
       monthly_expenses AS (
@@ -38,7 +37,6 @@ router.get("/analytics/financial-summary", async (req, res) => {
           date_trunc('month', expense_date) as month_start,
           SUM(amount) as total_expense
         FROM expenses
-        WHERE deleted = FALSE
         GROUP BY 1
       ),
       monthly_team_work AS (
@@ -46,7 +44,6 @@ router.get("/analytics/financial-summary", async (req, res) => {
           date_trunc('month', work_date) as month_start,
           SUM(amount) as total_work_amount
         FROM team_work_entries
-        WHERE deleted = FALSE
         GROUP BY 1
       )
       SELECT 
@@ -60,21 +57,21 @@ router.get("/analytics/financial-summary", async (req, res) => {
       ORDER BY m.month_start ASC;
     `;
 
-        const rows = await query(sql);
+    const rows = await query(sql);
 
-        // Format for frontend
-        const data = rows.map((row: any) => ({
-            month: row.month,
-            revenue: Number(row.revenue),
-            expense: Number(row.expense)
-        }));
+    // Format for frontend
+    const data = rows.map((row: any) => ({
+      month: row.month,
+      revenue: Number(row.revenue),
+      expense: Number(row.expense)
+    }));
 
-        res.json(data);
+    res.json(data);
 
-    } catch (err: any) {
-        console.error("GET /analytics/financial-summary error:", err);
-        res.status(500).json({ error: "Failed to fetch financial summary" });
-    }
+  } catch (err: any) {
+    console.error("GET /analytics/financial-summary error:", err);
+    res.status(500).json({ error: "Failed to fetch financial summary" });
+  }
 });
 
 export default router;

@@ -98,10 +98,7 @@ function mapQuotation(row: any, items: any[] = []) {
     bankAccountId: row.bank_account_id,
     createdBy: row.created_by,
     createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    deleted: row.deleted,
-    deletedAt: row.deleted_at,
-    deletedBy: row.deleted_by
+    updatedAt: row.updated_at
   };
 }
 
@@ -112,7 +109,7 @@ function mapQuotation(row: any, items: any[] = []) {
 router.get("/quotations", async (_req, res) => {
   try {
     const quotations = await query(
-      `SELECT * FROM quotations WHERE deleted = FALSE ORDER BY created_at DESC`
+      `SELECT * FROM quotations ORDER BY created_at DESC`
     );
 
     if (quotations.length === 0) return res.json([]);
@@ -336,7 +333,7 @@ router.put("/quotations/:id", async (req, res) => {
         const projectUpdateResult = await client.query(
           `UPDATE projects 
            SET project_amount = $1, updated_at = NOW() 
-           WHERE quotation_id = $2 AND deleted = FALSE
+           WHERE quotation_id = $2
            RETURNING *`,
           [data.total, id]
         );
@@ -352,7 +349,6 @@ router.put("/quotations/:id", async (req, res) => {
                SELECT id FROM projects 
                WHERE project_name = $3 
                  AND quotation_id IS NULL 
-                 AND deleted = FALSE
                LIMIT 1
              )`,
             [data.total, id, quotation.project_name]
@@ -376,52 +372,25 @@ router.put("/quotations/:id", async (req, res) => {
 });
 
 // =====================================
-// DELETE (SOFT)
+// DELETE (HARD)
 // =====================================
 
 router.delete("/quotations/:id", async (req, res) => {
   const id = req.params.id;
-  const actorUserId = req.body.actorUserId ?? null;
-  const reason = req.body.reason ?? null;
 
   try {
     const result = await withTransaction(async (client: any) => {
+      // Check existence
       const rows = await client.query(
-        `SELECT * FROM quotations WHERE id = $1 AND deleted = FALSE`,
+        `SELECT * FROM quotations WHERE id = $1`,
         [id]
       );
 
       if (rows.rowCount === 0) throw new Error("Not found");
 
-      const snap = rows.rows[0];
-      const itemsRes = await client.query(
-        `SELECT * FROM quotation_items WHERE quotation_id = $1`,
-        [id]
-      );
-
-      const fullSnap = { ...snap, items: itemsRes.rows };
-
-      await client.query(
-        `UPDATE quotations SET 
-          deleted = TRUE,
-          deleted_at = NOW(),
-          deleted_by = $1
-         WHERE id = $2`,
-        [actorUserId, id]
-      );
-
-      await client.query(
-        `INSERT INTO quotation_trash 
-         (original_id, snapshot_json, deleted_at, deleted_by, reason, retention_until)
-         VALUES ($1,$2,NOW(),$3,$4,NOW() + ($5 || ' days')::interval)`,
-        [id, JSON.stringify(fullSnap), actorUserId, reason, process.env.TRASH_RETENTION_DAYS || "30"]
-      );
-
-      await client.query(
-        `INSERT INTO trash_logs (item_type, item_id, action, actor_user_id, reason)
-         VALUES ('quotation',$1,'move',$2,$3)`,
-        [id, actorUserId, reason]
-      );
+      // Hard Delete
+      await client.query(`DELETE FROM quotation_items WHERE quotation_id = $1`, [id]);
+      await client.query(`DELETE FROM quotations WHERE id = $1`, [id]);
 
       return { ok: true };
     });
@@ -430,71 +399,6 @@ router.delete("/quotations/:id", async (req, res) => {
 
   } catch (err: any) {
     console.error("DELETE quotations error:", err);
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// =====================================
-// RESTORE
-// =====================================
-
-router.post("/quotations/:id/restore", async (req, res) => {
-  const id = req.params.id;
-  const actorUserId = req.body.actorUserId ?? null;
-
-  try {
-    const result = await withTransaction(async (client: any) => {
-      await client.query(
-        `UPDATE quotations SET deleted = FALSE, deleted_at = NULL, deleted_by = NULL WHERE id = $1`,
-        [id]
-      );
-
-      await client.query(`DELETE FROM quotation_trash WHERE original_id = $1`, [id]);
-
-      await client.query(
-        `INSERT INTO trash_logs (item_type, item_id, action, actor_user_id)
-         VALUES ('quotation',$1,'restore',$2)`,
-        [id, actorUserId]
-      );
-
-      return { ok: true };
-    });
-
-    res.json(result);
-
-  } catch (err: any) {
-    console.error("RESTORE quotations error:", err);
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// =====================================
-// PERMANENT DELETE
-// =====================================
-
-router.delete("/trash/quotations/:id", async (req, res) => {
-  const id = req.params.id;
-  const actorUserId = req.body.actorUserId ?? null;
-
-  try {
-    const result = await withTransaction(async (client: any) => {
-      await client.query(`DELETE FROM quotation_trash WHERE original_id = $1`, [id]);
-      await client.query(`DELETE FROM quotation_items WHERE quotation_id = $1`, [id]);
-      await client.query(`DELETE FROM quotations WHERE id = $1`, [id]);
-
-      await client.query(
-        `INSERT INTO trash_logs (item_type, item_id, action, actor_user_id)
-         VALUES ('quotation',$1,'purge',$2)`,
-        [id, actorUserId]
-      );
-
-      return { ok: true };
-    });
-
-    res.json(result);
-
-  } catch (err: any) {
-    console.error("PURGE quotations error:", err);
     res.status(400).json({ error: err.message });
   }
 });

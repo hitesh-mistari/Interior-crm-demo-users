@@ -35,7 +35,6 @@ function mapWork(row: any) {
         receiptUrl: row.receipt_url,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
-        deleted: row.deleted,
     };
 }
 
@@ -43,7 +42,7 @@ function mapWork(row: any) {
 router.get("/teams/work", async (req, res) => {
     try {
         const { teamMemberId, projectId, startDate, endDate } = req.query;
-        let sql = `SELECT * FROM team_work_entries WHERE deleted = FALSE`;
+        let sql = `SELECT * FROM team_work_entries WHERE 1=1`;
         const params: any[] = [];
         let i = 1;
 
@@ -130,12 +129,12 @@ router.put("/teams/work/:id", async (req, res) => {
     }
 });
 
-// DELETE
+// DELETE (HARD)
 router.delete("/teams/work/:id", async (req, res) => {
     try {
         const id = req.params.id;
         const result = await query(
-            `UPDATE team_work_entries SET deleted = TRUE, deleted_at = NOW() WHERE id = $1 RETURNING *`,
+            `DELETE FROM team_work_entries WHERE id = $1 RETURNING *`,
             [id]
         );
         if (result.length === 0) return res.status(404).json({ error: "Not found" });

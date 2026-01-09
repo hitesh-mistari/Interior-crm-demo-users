@@ -29,7 +29,6 @@ function mapPayment(row: any) {
         workEntryIds: row.work_entry_ids,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
-        deleted: row.deleted,
     };
 }
 
@@ -37,7 +36,7 @@ function mapPayment(row: any) {
 router.get("/teams/payments", async (req, res) => {
     try {
         const { teamMemberId, startDate, endDate } = req.query;
-        let sql = `SELECT * FROM team_payments WHERE deleted = FALSE`;
+        let sql = `SELECT * FROM team_payments WHERE 1=1`;
         const params: any[] = [];
         let i = 1;
 
@@ -140,12 +139,12 @@ router.put("/teams/payments/:id", async (req, res) => {
     }
 });
 
-// DELETE
+// DELETE (HARD)
 router.delete("/teams/payments/:id", async (req, res) => {
     try {
         const id = req.params.id;
         const result = await query(
-            `UPDATE team_payments SET deleted = TRUE, deleted_at = NOW() WHERE id = $1 RETURNING *`,
+            `DELETE FROM team_payments WHERE id = $1 RETURNING *`,
             [id]
         );
         if (result.length === 0) return res.status(404).json({ error: "Not found" });

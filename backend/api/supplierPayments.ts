@@ -18,7 +18,6 @@ function mapSupplierPayment(row: any) {
     notes: row.notes,
     createdAt: row.created_at,
     createdBy: row.created_by,
-    deleted: row.deleted,
   };
 }
 
@@ -42,7 +41,6 @@ router.get("/supplier-payments", async (req, res) => {
     const rows = await query(
       `SELECT *
        FROM supplier_payments
-       WHERE deleted = FALSE
        ORDER BY created_at DESC`
     );
     res.json(rows.map(mapSupplierPayment));
@@ -96,7 +94,7 @@ router.post("/supplier-payments", async (req, res) => {
       if (data.expenseId) {
         // Get the expense details
         const expenseResult = await client.query(
-          `SELECT id, amount, supplier_id FROM expenses WHERE id = $1 AND deleted = FALSE`,
+          `SELECT id, amount, supplier_id FROM expenses WHERE id = $1`,
           [data.expenseId]
         );
 
@@ -106,9 +104,9 @@ router.post("/supplier-payments", async (req, res) => {
 
           // Calculate total paid for this expense
           const paymentsResult = await client.query(
-            `SELECT COALESCE(SUM(amount), 0) as total_paid 
-             FROM supplier_payments 
-             WHERE expense_id = $1 AND deleted = FALSE`,
+            `SELECT COALESCE(SUM(amount), 0) as total_paid
+             FROM supplier_payments
+             WHERE expense_id = $1`,
             [data.expenseId]
           );
 
@@ -182,51 +180,33 @@ router.put("/supplier-payments/:id", async (req, res) => {
 });
 
 // ==========================
-// SOFT DELETE → trash
+// DELETE (HARD)
 // ==========================
 router.delete("/supplier-payments/:id", async (req, res) => {
   const id = req.params.id;
-  const actorUserId = req.body.actorUserId ?? null;
-  const reason = req.body.reason ?? null;
 
   try {
     const result = await withTransaction(async (client: any) => {
-      // get snapshot
+      // Get the payment to check for linked expense
       const rows = await client.query(
-        `SELECT * FROM supplier_payments WHERE id = $1 AND deleted = FALSE`,
+        `SELECT * FROM supplier_payments WHERE id = $1`,
         [id]
       );
       if (rows.rowCount === 0) throw new Error("Not found");
 
-      const snap = rows.rows[0];
-      const expenseId = snap.expense_id;
+      const payment = rows.rows[0];
+      const expenseId = payment.expense_id;
 
-      // mark deleted
+      // Hard DELETE
       await client.query(
-        `UPDATE supplier_payments
-         SET deleted = TRUE, deleted_at = NOW(), deleted_by = $1
-         WHERE id = $2`,
-        [actorUserId, id]
-      );
-
-      // insert trash snapshot
-      await client.query(
-        `INSERT INTO supplier_payment_trash (original_id, snapshot_json, deleted_at, deleted_by, reason, retention_until)
-         VALUES ($1, $2, NOW(), $3, $4, NOW() + ($5 || ' days')::interval)`,
-        [id, JSON.stringify(snap), actorUserId, reason, process.env.TRASH_RETENTION_DAYS || "30"]
-      );
-
-      // trash log
-      await client.query(
-        `INSERT INTO trash_logs (item_type, item_id, action, actor_user_id, reason)
-         VALUES ('supplier_payment', $1, 'move', $2, $3)`,
-        [id, actorUserId, reason]
+        `DELETE FROM supplier_payments WHERE id = $1`,
+        [id]
       );
 
       // Recalculate expense payment status if this payment was linked to an expense
       if (expenseId) {
         const expenseResult = await client.query(
-          `SELECT id, amount, supplier_id FROM expenses WHERE id = $1 AND deleted = FALSE`,
+          `SELECT id, amount, supplier_id FROM expenses WHERE id = $1`,
           [expenseId]
         );
 
@@ -236,9 +216,9 @@ router.delete("/supplier-payments/:id", async (req, res) => {
 
           // Calculate total paid for this expense (excluding the deleted payment)
           const paymentsResult = await client.query(
-            `SELECT COALESCE(SUM(amount), 0) as total_paid 
-             FROM supplier_payments 
-             WHERE expense_id = $1 AND deleted = FALSE`,
+            `SELECT COALESCE(SUM(amount), 0) as total_paid
+             FROM supplier_payments
+             WHERE expense_id = $1`,
             [expenseId]
           );
 
@@ -267,139 +247,6 @@ router.delete("/supplier-payments/:id", async (req, res) => {
 
   } catch (err: any) {
     console.error("DELETE supplier-payments error:", err);
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// ==========================
-// RESTORE
-// ==========================
-router.post("/supplier-payments/:id/restore", async (req, res) => {
-  const id = req.params.id;
-  const actorUserId = req.body.actorUserId ?? null;
-
-  try {
-    const result = await withTransaction(async (client: any) => {
-      // Get the payment details before restoring
-      const paymentRows = await client.query(
-        `SELECT * FROM supplier_payments WHERE id = $1`,
-        [id]
-      );
-
-      if (paymentRows.rowCount === 0) throw new Error("Payment not found");
-      const payment = paymentRows.rows[0];
-      const expenseId = payment.expense_id;
-
-      await client.query(
-        `UPDATE supplier_payments
-         SET deleted = FALSE, deleted_at = NULL, deleted_by = NULL
-         WHERE id = $1`,
-        [id]
-      );
-
-      await client.query(`DELETE FROM supplier_payment_trash WHERE original_id = $1`, [id]);
-
-      await client.query(
-        `INSERT INTO trash_logs (item_type, item_id, action, actor_user_id)
-         VALUES ('supplier_payment', $1, 'restore', $2)`,
-        [id, actorUserId]
-      );
-
-      // Recalculate expense payment status if this payment is linked to an expense
-      if (expenseId) {
-        const expenseResult = await client.query(
-          `SELECT id, amount, supplier_id FROM expenses WHERE id = $1 AND deleted = FALSE`,
-          [expenseId]
-        );
-
-        if (expenseResult.rowCount > 0) {
-          const expense = expenseResult.rows[0];
-          const expenseAmount = Number(expense.amount);
-
-          // Calculate total paid for this expense (including the restored payment)
-          const paymentsResult = await client.query(
-            `SELECT COALESCE(SUM(amount), 0) as total_paid 
-             FROM supplier_payments 
-             WHERE expense_id = $1 AND deleted = FALSE`,
-            [expenseId]
-          );
-
-          const totalPaid = Number(paymentsResult.rows[0].total_paid);
-
-          // Update payment status based on total paid
-          // Database constraint only allows 'Paid' or 'Unpaid'
-          let newStatus = 'Unpaid';
-          if (totalPaid >= expenseAmount) {
-            newStatus = 'Paid';
-          }
-
-          // If expense doesn't have a supplier linked yet, link it to the payment's supplier
-          const paymentSupplierId = payment.supplier_id;
-          if (!expense.supplier_id && paymentSupplierId) {
-            await client.query(
-              `UPDATE expenses SET payment_status = $1, supplier_id = $2, updated_at = NOW() WHERE id = $3`,
-              [newStatus, paymentSupplierId, expenseId]
-            );
-          } else {
-            await client.query(
-              `UPDATE expenses SET payment_status = $1, updated_at = NOW() WHERE id = $2`,
-              [newStatus, expenseId]
-            );
-          }
-        }
-      }
-
-      return { ok: true };
-    });
-
-    res.json(result);
-
-  } catch (err: any) {
-    console.error("RESTORE supplier-payments error:", err);
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// ==========================
-// TRASH LIST
-// ==========================
-router.get("/trash/supplier-payments", async (_req, res) => {
-  try {
-    const rows = await query(
-      `SELECT * FROM supplier_payment_trash ORDER BY deleted_at DESC`
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error("GET trash/supplier-payments error:", err);
-    res.status(500).json({ error: "Failed to get trash list" });
-  }
-});
-
-// ==========================
-// PERMANENT DELETE (PURGE)
-// ==========================
-router.delete("/trash/supplier-payments/:id", async (req, res) => {
-  const id = req.params.id;
-  const actorUserId = req.body.actorUserId ?? null;
-
-  try {
-    const result = await withTransaction(async (client: any) => {
-      await client.query(`DELETE FROM supplier_payment_trash WHERE original_id = $1`, [id]);
-      await client.query(`DELETE FROM supplier_payments WHERE id = $1`, [id]);
-
-      await client.query(
-        `INSERT INTO trash_logs (item_type, item_id, action, actor_user_id)
-         VALUES ('supplier_payment', $1, 'purge', $2)`,
-        [id, actorUserId]
-      );
-
-      return { ok: true };
-    });
-
-    res.json(result);
-
-  } catch (err: any) {
-    console.error("PURGE supplier-payments error:", err);
     res.status(400).json({ error: err.message });
   }
 });

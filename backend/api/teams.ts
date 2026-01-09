@@ -36,8 +36,7 @@ function mapMember(row: any) {
         photoUrl: row.photo_url,
         notes: row.notes,
         createdAt: row.created_at,
-        updatedAt: row.updated_at,
-        deleted: row.deleted,
+        updatedAt: row.updated_at
     };
 }
 
@@ -45,7 +44,7 @@ function mapMember(row: any) {
 router.get("/teams", async (req, res) => {
     try {
         const { status } = req.query;
-        let sql = `SELECT * FROM team_members WHERE deleted = FALSE`;
+        let sql = `SELECT * FROM team_members WHERE 1=1`;
         const params: any[] = [];
 
         if (status) {
@@ -164,12 +163,12 @@ router.put("/teams/:id", async (req, res) => {
     }
 });
 
-// DELETE (Soft)
+// DELETE (HARD)
 router.delete("/teams/:id", async (req, res) => {
     try {
         const id = req.params.id;
         const result = await query(
-            `UPDATE team_members SET deleted = TRUE, deleted_at = NOW() WHERE id = $1 RETURNING *`,
+            `DELETE FROM team_members WHERE id = $1 RETURNING *`,
             [id]
         );
         if (result.length === 0) return res.status(404).json({ error: "Not found" });

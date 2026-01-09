@@ -8,13 +8,13 @@ const router = express.Router();
 const LeadFollowUpSchema = z.object({
   leadId: z.string().uuid(),
   interactionId: z.string().uuid().optional().nullable(),
-  followUpType: z.enum(["Call","Email","Meeting","SMS","Reminder"]),
+  followUpType: z.enum(["Call", "Email", "Meeting", "SMS", "Reminder"]),
   subject: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
   scheduledDate: z.string().optional().nullable(),
   completedDate: z.string().optional().nullable(),
-  status: z.enum(["Scheduled","Completed","Cancelled","Overdue"]).optional().nullable(),
-  priority: z.enum(["Low","Medium","High","Urgent"]).optional().nullable(),
+  status: z.enum(["Scheduled", "Completed", "Cancelled", "Overdue"]).optional().nullable(),
+  priority: z.enum(["Low", "Medium", "High", "Urgent"]).optional().nullable(),
   assignedTo: z.string().uuid().optional().nullable(),
   createdBy: z.string().uuid().optional().nullable()
 });
@@ -29,7 +29,6 @@ router.get("/lead-follow-ups", async (req, res) => {
     const rows = await query(
       `SELECT *
        FROM lead_follow_ups
-       WHERE deleted = FALSE
        ORDER BY created_at DESC`
     );
     res.json(rows);
@@ -128,132 +127,22 @@ router.put("/lead-follow-ups/:id", async (req, res) => {
 });
 
 // ==========================
-// SOFT DELETE → trash
+// DELETE (HARD)
 // ==========================
 router.delete("/lead-follow-ups/:id", async (req, res) => {
   const id = req.params.id;
-  const actorUserId = req.body.actorUserId ?? null;
-  const reason = req.body.reason ?? null;
 
   try {
-    const result = await withTransaction(async (client: any) => {
-      // get snapshot
-      const rows = await client.query(
-        `SELECT * FROM lead_follow_ups WHERE id = $1 AND deleted = FALSE`,
-        [id]
-      );
-      if (rows.rowCount === 0) throw new Error("Not found");
+    const result = await query(
+      `DELETE FROM lead_follow_ups WHERE id = $1 RETURNING *`,
+      [id]
+    );
 
-      const snap = rows.rows[0];
+    if (result.length === 0) return res.status(404).json({ error: "Not found" });
 
-      // mark deleted
-      await client.query(
-        `UPDATE lead_follow_ups
-         SET deleted = TRUE, deleted_at = NOW(), deleted_by = $1
-         WHERE id = $2`,
-        [actorUserId, id]
-      );
-
-      // insert trash snapshot
-      await client.query(
-        `INSERT INTO lead_follow_up_trash (original_id, snapshot_json, deleted_at, deleted_by, reason, retention_until)
-         VALUES ($1, $2, NOW(), $3, $4, NOW() + ($5 || ' days')::interval)`,
-        [id, JSON.stringify(snap), actorUserId, reason, process.env.TRASH_RETENTION_DAYS || "30"]
-      );
-
-      // trash log
-      await client.query(
-        `INSERT INTO trash_logs (item_type, item_id, action, actor_user_id, reason)
-         VALUES ('lead_follow_up', $1, 'move', $2, $3)`,
-        [id, actorUserId, reason]
-      );
-
-      return { ok: true };
-    });
-
-    res.json(result);
-
+    res.json({ ok: true });
   } catch (err: any) {
     console.error("DELETE lead-follow-ups error:", err);
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// ==========================
-// RESTORE
-// ==========================
-router.post("/lead-follow-ups/:id/restore", async (req, res) => {
-  const id = req.params.id;
-  const actorUserId = req.body.actorUserId ?? null;
-
-  try {
-    const result = await withTransaction(async (client: any) => {
-      await client.query(
-        `UPDATE lead_follow_ups
-         SET deleted = FALSE, deleted_at = NULL, deleted_by = NULL
-         WHERE id = $1`,
-        [id]
-      );
-
-      await client.query(`DELETE FROM lead_follow_up_trash WHERE original_id = $1`, [id]);
-
-      await client.query(
-        `INSERT INTO trash_logs (item_type, item_id, action, actor_user_id)
-         VALUES ('lead_follow_up', $1, 'restore', $2)`,
-        [id, actorUserId]
-      );
-
-      return { ok: true };
-    });
-
-    res.json(result);
-
-  } catch (err: any) {
-    console.error("RESTORE lead-follow-ups error:", err);
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// ==========================
-// TRASH LIST
-// ==========================
-router.get("/trash/lead-follow-ups", async (_req, res) => {
-  try {
-    const rows = await query(
-      `SELECT * FROM lead_follow_up_trash ORDER BY deleted_at DESC`
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error("GET trash/lead-follow-ups error:", err);
-    res.status(500).json({ error: "Failed to get trash list" });
-  }
-});
-
-// ==========================
-// PERMANENT DELETE (PURGE)
-// ==========================
-router.delete("/trash/lead-follow-ups/:id", async (req, res) => {
-  const id = req.params.id;
-  const actorUserId = req.body.actorUserId ?? null;
-
-  try {
-    const result = await withTransaction(async (client: any) => {
-      await client.query(`DELETE FROM lead_follow_up_trash WHERE original_id = $1`, [id]);
-      await client.query(`DELETE FROM lead_follow_ups WHERE id = $1`, [id]);
-
-      await client.query(
-        `INSERT INTO trash_logs (item_type, item_id, action, actor_user_id)
-         VALUES ('lead_follow_up', $1, 'purge', $2)`,
-        [id, actorUserId]
-      );
-
-      return { ok: true };
-    });
-
-    res.json(result);
-
-  } catch (err: any) {
-    console.error("PURGE lead-follow-ups error:", err);
     res.status(400).json({ error: err.message });
   }
 });

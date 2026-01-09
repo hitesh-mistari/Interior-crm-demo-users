@@ -33,10 +33,7 @@ function mapSupplier(row: any) {
     notes: row.notes,
     createdBy: row.created_by,
     createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    deleted: row.deleted,
-    deletedAt: row.deleted_at,
-    deletedBy: row.deleted_by
+    updatedAt: row.updated_at
   };
 }
 
@@ -48,7 +45,6 @@ router.get("/suppliers", async (req, res) => {
     const rows = await query(
       `SELECT *
        FROM suppliers
-       WHERE deleted = FALSE
        ORDER BY created_at DESC`
     );
     res.json(rows.map(mapSupplier));
@@ -140,12 +136,6 @@ router.put("/suppliers/:id", async (req, res) => {
     if (data.category !== undefined) { sets.push(`category = $${i++}`); values.push(data.category ?? null); }
     if (data.notes !== undefined) { sets.push(`notes = $${i++}`); values.push(data.notes ?? null); }
 
-    // sets.push(`updated_at = NOW()`); // updated_at might not exist or be auto-handled, but usually good to have if column exists. 
-    // Checking schema again... updated_at DOES NOT EXIST in the schema output I saw earlier!
-    // Wait, let me double check the schema output from step 219.
-    // Schema output: address, alternate_phone, category, company_name, created_at, created_by, deleted, deleted_at, deleted_by, gst_number, id, notes, phone, supplier_name.
-    // NO updated_at column! I should remove it from the query to avoid error.
-
     values.push(id);
 
     const result = await query(
@@ -163,132 +153,22 @@ router.put("/suppliers/:id", async (req, res) => {
 });
 
 // ==========================
-// SOFT DELETE → trash
+// DELETE (HARD)
 // ==========================
 router.delete("/suppliers/:id", async (req, res) => {
   const id = req.params.id;
-  const actorUserId = req.body.actorUserId ?? null;
-  const reason = req.body.reason ?? null;
 
   try {
-    const result = await withTransaction(async (client: any) => {
-      // get snapshot
-      const rows = await client.query(
-        `SELECT * FROM suppliers WHERE id = $1 AND deleted = FALSE`,
-        [id]
-      );
-      if (rows.rowCount === 0) throw new Error("Not found");
+    const result = await query(
+      `DELETE FROM suppliers WHERE id = $1 RETURNING *`,
+      [id]
+    );
 
-      const snap = rows.rows[0];
+    if (result.length === 0) return res.status(404).json({ error: "Not found" });
 
-      // mark deleted
-      await client.query(
-        `UPDATE suppliers
-         SET deleted = TRUE, deleted_at = NOW(), deleted_by = $1
-         WHERE id = $2`,
-        [actorUserId, id]
-      );
-
-      // insert trash snapshot
-      await client.query(
-        `INSERT INTO supplier_trash (original_id, snapshot_json, deleted_at, deleted_by, reason, retention_until)
-         VALUES ($1, $2, NOW(), $3, $4, NOW() + ($5 || ' days')::interval)`,
-        [id, JSON.stringify(snap), actorUserId, reason, process.env.TRASH_RETENTION_DAYS || "30"]
-      );
-
-      // trash log
-      await client.query(
-        `INSERT INTO trash_logs (item_type, item_id, action, actor_user_id, reason)
-         VALUES ('supplier', $1, 'move', $2, $3)`,
-        [id, actorUserId, reason]
-      );
-
-      return { ok: true };
-    });
-
-    res.json(result);
-
+    res.json({ ok: true });
   } catch (err: any) {
     console.error("DELETE suppliers error:", err);
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// ==========================
-// RESTORE
-// ==========================
-router.post("/suppliers/:id/restore", async (req, res) => {
-  const id = req.params.id;
-  const actorUserId = req.body.actorUserId ?? null;
-
-  try {
-    const result = await withTransaction(async (client: any) => {
-      await client.query(
-        `UPDATE suppliers
-         SET deleted = FALSE, deleted_at = NULL, deleted_by = NULL
-         WHERE id = $1`,
-        [id]
-      );
-
-      await client.query(`DELETE FROM supplier_trash WHERE original_id = $1`, [id]);
-
-      await client.query(
-        `INSERT INTO trash_logs (item_type, item_id, action, actor_user_id)
-         VALUES ('supplier', $1, 'restore', $2)`,
-        [id, actorUserId]
-      );
-
-      return { ok: true };
-    });
-
-    res.json(result);
-
-  } catch (err: any) {
-    console.error("RESTORE suppliers error:", err);
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// ==========================
-// TRASH LIST
-// ==========================
-router.get("/trash/suppliers", async (_req, res) => {
-  try {
-    const rows = await query(
-      `SELECT * FROM supplier_trash ORDER BY deleted_at DESC`
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error("GET trash/suppliers error:", err);
-    res.status(500).json({ error: "Failed to get trash list" });
-  }
-});
-
-// ==========================
-// PERMANENT DELETE (PURGE)
-// ==========================
-router.delete("/trash/suppliers/:id", async (req, res) => {
-  const id = req.params.id;
-  const actorUserId = req.body.actorUserId ?? null;
-
-  try {
-    const result = await withTransaction(async (client: any) => {
-      await client.query(`DELETE FROM supplier_trash WHERE original_id = $1`, [id]);
-      await client.query(`DELETE FROM suppliers WHERE id = $1`, [id]);
-
-      await client.query(
-        `INSERT INTO trash_logs (item_type, item_id, action, actor_user_id)
-         VALUES ('supplier', $1, 'purge', $2)`,
-        [id, actorUserId]
-      );
-
-      return { ok: true };
-    });
-
-    res.json(result);
-
-  } catch (err: any) {
-    console.error("PURGE suppliers error:", err);
     res.status(400).json({ error: err.message });
   }
 });

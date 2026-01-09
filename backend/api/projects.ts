@@ -62,15 +62,17 @@ function fromDbStatus(s?: string | null) {
 /* ======================================================
    GET ALL PROJECTS
 ====================================================== */
+/* ======================================================
+   GET ALL PROJECTS
+====================================================== */
 router.get("/projects", async (_req, res) => {
   try {
     const rows = await query(
       `SELECT 
          p.*,
-         (SELECT COUNT(*)::int FROM tasks t WHERE t.project_id = p.id AND t.deleted = FALSE) AS total_tasks,
-         (SELECT COUNT(*)::int FROM tasks t WHERE t.project_id = p.id AND t.deleted = FALSE AND t.status = 'Completed') AS completed_tasks
+         (SELECT COUNT(*)::int FROM tasks t WHERE t.project_id = p.id) AS total_tasks,
+         (SELECT COUNT(*)::int FROM tasks t WHERE t.project_id = p.id AND t.status = 'Completed') AS completed_tasks
        FROM projects p
-       WHERE p.deleted = FALSE
        ORDER BY p.id DESC`
     );
 
@@ -95,10 +97,6 @@ router.get("/projects", async (_req, res) => {
       createdBy: row.created_by,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-
-      deleted: row.deleted,
-      deletedAt: row.deleted_at,
-      deletedBy: row.deleted_by,
     }));
 
     res.json(formatted);
@@ -248,60 +246,60 @@ router.put("/projects/:id", async (req, res) => {
 });
 
 /* ======================================================
-   SOFT DELETE PROJECT
+   DELETE PROJECT (HARD DELETE)
 ====================================================== */
 router.delete("/projects/:id", async (req, res) => {
   try {
     const id = req.params.id;
 
     const result = await withTransaction(async (client) => {
-      // 1. Soft-delete the project
+      // 1. Cascading delete related entities
+      // Expenses
+      await client.query(
+        `DELETE FROM expenses WHERE project_id = $1`,
+        [id]
+      );
+      // Payments
+      await client.query(
+        `DELETE FROM payments WHERE project_id = $1`,
+        [id]
+      );
+      // Materials
+      await client.query(
+        `DELETE FROM materials WHERE project_id = $1`,
+        [id]
+      );
+      // Tasks
+      await client.query(
+        `DELETE FROM tasks WHERE project_id = $1`,
+        [id]
+      );
+      // Team work entries
+      await client.query(
+        `DELETE FROM team_work_entries WHERE project_id = $1`,
+        [id]
+      );
+      // Supplier payments (linked to expenses of this project)
+      await client.query(
+        `DELETE FROM supplier_payments 
+         WHERE expense_id IN (SELECT id FROM expenses WHERE project_id = $1)`,
+        [id]
+      );
+
+      // 2. Unset project from teams
+      await client.query(
+        `UPDATE teams SET assigned_project_id = NULL WHERE assigned_project_id = $1`,
+        [id]
+      );
+
+      // 3. Delete the project
       const projectRes = await client.query(
-        `UPDATE projects SET deleted = TRUE, deleted_at = NOW() WHERE id = $1 RETURNING *`,
+        `DELETE FROM projects WHERE id = $1 RETURNING *`,
         [id]
       );
 
       if (projectRes.rowCount === 0) throw new Error("Project not found");
       const deletedProject = projectRes.rows[0];
-
-      // 2. Cascading soft-delete related entities
-      // Expenses
-      await client.query(
-        `UPDATE expenses SET deleted = TRUE, deleted_at = NOW() WHERE project_id = $1 AND deleted = FALSE`,
-        [id]
-      );
-      // Payments
-      await client.query(
-        `UPDATE payments SET deleted = TRUE, deleted_at = NOW() WHERE project_id = $1 AND deleted = FALSE`,
-        [id]
-      );
-      // Materials
-      await client.query(
-        `UPDATE materials SET deleted = TRUE, deleted_at = NOW() WHERE project_id = $1 AND deleted = FALSE`,
-        [id]
-      );
-      // Tasks
-      await client.query(
-        `UPDATE tasks SET deleted = TRUE, deleted_at = NOW() WHERE project_id = $1 AND deleted = FALSE`,
-        [id]
-      );
-      // Team work entries
-      await client.query(
-        `UPDATE team_work_entries SET deleted = TRUE, deleted_at = NOW() WHERE project_id = $1 AND deleted = FALSE`,
-        [id]
-      );
-      // Supplier payments (linked to expenses of this project)
-      await client.query(
-        `UPDATE supplier_payments SET deleted = TRUE, deleted_at = NOW() 
-         WHERE expense_id IN (SELECT id FROM expenses WHERE project_id = $1) AND deleted = FALSE`,
-        [id]
-      );
-
-      // 3. Unset project from teams
-      await client.query(
-        `UPDATE teams SET assigned_project_id = NULL WHERE assigned_project_id = $1`,
-        [id]
-      );
 
       // 4. Revert quotation status if applicable
       if (deletedProject.quotation_id) {
@@ -325,129 +323,6 @@ router.delete("/projects/:id", async (req, res) => {
 });
 
 /* ======================================================
-   RESTORE PROJECT
-====================================================== */
-router.post("/projects/:id/restore", async (req, res) => {
-  try {
-    const id = req.params.id;
-
-    const result = await withTransaction(async (client) => {
-      // 1. Restore the project
-      const projectRes = await client.query(
-        `UPDATE projects SET deleted = FALSE, deleted_at = NULL WHERE id = $1 RETURNING *`,
-        [id]
-      );
-
-      if (projectRes.rowCount === 0) throw new Error("Project not found");
-      const restoredProject = projectRes.rows[0];
-
-      // 2. Cascading restore related entities
-      // Note: We only restore those that were deleted at the same time or have project_id link
-      // For simplicity, we restore all deleted records linked to this project.
-      await client.query(
-        `UPDATE expenses SET deleted = FALSE, deleted_at = NULL WHERE project_id = $1 AND deleted = TRUE`,
-        [id]
-      );
-      await client.query(
-        `UPDATE payments SET deleted = FALSE, deleted_at = NULL WHERE project_id = $1 AND deleted = TRUE`,
-        [id]
-      );
-      await client.query(
-        `UPDATE materials SET deleted = FALSE, deleted_at = NULL WHERE project_id = $1 AND deleted = TRUE`,
-        [id]
-      );
-      await client.query(
-        `UPDATE tasks SET deleted = FALSE, deleted_at = NULL WHERE project_id = $1 AND deleted = TRUE`,
-        [id]
-      );
-      await client.query(
-        `UPDATE team_work_entries SET deleted = FALSE, deleted_at = NULL WHERE project_id = $1 AND deleted = TRUE`,
-        [id]
-      );
-      await client.query(
-        `UPDATE supplier_payments SET deleted = FALSE, deleted_at = NULL 
-         WHERE expense_id IN (SELECT id FROM expenses WHERE project_id = $1)`,
-        [id]
-      );
-
-      // 3. Set quotation status back to 'Converted' if applicable
-      if (restoredProject.quotation_id) {
-        await client.query(
-          `UPDATE quotations SET status = 'Converted' WHERE id = $1`,
-          [restoredProject.quotation_id]
-        );
-      }
-
-      return restoredProject;
-    });
-
-    res.json(result);
-  } catch (err: any) {
-    console.error("RESTORE project error:", err);
-    res.status(err.message === "Project not found" ? 404 : 500).json({
-      error: "Failed to restore project"
-    });
-  }
-});
-
-/* ======================================================
-   GET TRASH LIST
-====================================================== */
-router.get("/trash/projects", async (_req, res) => {
-  try {
-    const rows = await query(
-      `SELECT * FROM projects
-       WHERE deleted = TRUE
-       ORDER BY deleted_at DESC`
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error("Trash list error:", err);
-    res.status(500).json({ error: "Failed to fetch trash list" });
-  }
-});
-
-/* ======================================================
-   PERMANENT DELETE
-====================================================== */
-router.delete("/trash/projects/:id", async (req, res) => {
-  try {
-    const id = req.params.id;
-
-    await withTransaction(async (client) => {
-      // Permanently delete associated supplier payments (via expenses)
-      await client.query(
-        `DELETE FROM supplier_payments WHERE expense_id IN (SELECT id FROM expenses WHERE project_id = $1)`,
-        [id]
-      );
-
-      // Permanently delete associated expenses
-      await client.query(`DELETE FROM expenses WHERE project_id = $1`, [id]);
-
-      // Permanently delete associated payments
-      await client.query(`DELETE FROM payments WHERE project_id = $1`, [id]);
-
-      // Permanently delete associated materials
-      await client.query(`DELETE FROM materials WHERE project_id = $1`, [id]);
-
-      // Permanently delete associated tasks
-      await client.query(`DELETE FROM tasks WHERE project_id = $1`, [id]);
-
-      // Permanently delete associated team work entries
-      await client.query(`DELETE FROM team_work_entries WHERE project_id = $1`, [id]);
-
-      // Permanently delete the project
-      await client.query(`DELETE FROM projects WHERE id = $1`, [id]);
-    });
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error("PURGE project error:", err);
-    res.status(500).json({ error: "Failed to permanently delete project" });
-  }
-});
-
-/* ======================================================
    TASK METRICS FOR PROJECT
 ====================================================== */
 router.get("/projects/:id/task-metrics", async (req, res) => {
@@ -466,14 +341,14 @@ router.get("/projects/:id/task-metrics", async (req, res) => {
           2
         )::float AS completion_percentage
        FROM tasks
-       WHERE project_id = $1 AND deleted = FALSE`,
+       WHERE project_id = $1`,
       [projectId]
     );
 
     const statusRows = await query(
       `SELECT status, COUNT(*)::int AS count
        FROM tasks
-       WHERE project_id = $1 AND deleted = FALSE
+       WHERE project_id = $1
        GROUP BY status
        ORDER BY status`,
       [projectId]
@@ -482,7 +357,7 @@ router.get("/projects/:id/task-metrics", async (req, res) => {
     const priorityRows = await query(
       `SELECT priority, COUNT(*)::int AS count
        FROM tasks
-       WHERE project_id = $1 AND deleted = FALSE
+       WHERE project_id = $1
        GROUP BY priority
        ORDER BY priority`,
       [projectId]

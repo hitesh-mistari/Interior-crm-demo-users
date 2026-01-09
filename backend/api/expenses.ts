@@ -65,16 +65,13 @@ function mapExpenseRow(row: any) {
     editCount: row.edit_count,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    deleted: row.deleted,
-    deletedAt: row.deleted_at,
-    deletedBy: row.deleted_by,
   };
 }
 
 router.get("/expenses", async (_req, res) => {
   try {
     const rows = await query(
-      `SELECT * FROM expenses WHERE deleted = FALSE ORDER BY created_at DESC`
+      `SELECT * FROM expenses ORDER BY created_at DESC`
     );
     res.json(rows.map(mapExpenseRow));
   } catch (err: any) {
@@ -106,8 +103,8 @@ router.post("/expenses", async (req, res) => {
     const imgs = normalizeReceiptImages(data.receiptImages);
     const created = await withTransaction(async (client: any) => {
       const insert = await client.query(
-        `INSERT INTO expenses (project_id, title, amount, expense_date, payment_mode, payment_status, notes, receipt_images, supplier_id, temp_supplier_name, team_member_id, added_by, created_at, updated_at, deleted)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,NOW(),NULL,FALSE)
+        `INSERT INTO expenses (project_id, title, amount, expense_date, payment_mode, payment_status, notes, receipt_images, supplier_id, temp_supplier_name, team_member_id, added_by, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,NOW(),NULL)
          RETURNING *`,
         [
           data.projectId,
@@ -210,56 +207,6 @@ router.delete("/expenses/:id", async (req, res) => {
     res.json({ ok: true, message: "Expense deleted successfully" });
   } catch (err: any) {
     console.error("Delete expense error:", err);
-    res.status(400).json({ error: err.message });
-  }
-});
-
-router.post("/expenses/:id/restore", async (req, res) => {
-  const id = req.params.id;
-  const actorUserId = req.body?.actorUserId ?? null;
-  try {
-    const result = await withTransaction(async (client: any) => {
-      await client.query(
-        `UPDATE expenses SET deleted = FALSE, deleted_at = NULL, deleted_by = NULL, updated_at = NOW() WHERE id = $1`,
-        [id]
-      );
-      await client.query(`DELETE FROM expense_trash WHERE original_id = $1`, [id]);
-      await client.query(
-        `INSERT INTO trash_logs (item_type, item_id, action, actor_user_id) VALUES ('expense', $1, 'restore', $2)`,
-        [id, actorUserId]
-      );
-      return { ok: true };
-    });
-    res.json(result);
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-router.get("/trash/expenses", async (_req, res) => {
-  try {
-    const rows = await query(`SELECT * FROM expense_trash ORDER BY deleted_at DESC`);
-    res.json(rows);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to list trash" });
-  }
-});
-
-router.delete("/trash/expenses/:id", async (req, res) => {
-  const id = req.params.id;
-  const actorUserId = req.body?.actorUserId ?? null;
-  try {
-    const result = await withTransaction(async (client: any) => {
-      await client.query(`DELETE FROM expense_trash WHERE original_id = $1`, [id]);
-      await client.query(`DELETE FROM expenses WHERE id = $1`, [id]);
-      await client.query(
-        `INSERT INTO trash_logs (item_type, item_id, action, actor_user_id) VALUES ('expense', $1, 'purge', $2)`,
-        [id, actorUserId]
-      );
-      return { ok: true };
-    });
-    res.json(result);
-  } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });

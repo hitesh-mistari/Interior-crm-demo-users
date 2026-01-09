@@ -5,23 +5,18 @@ let pool: Pool | null = null;
 
 export function getPool(): Pool {
   if (!pool) {
-    const host = process.env.PGHOST;
-    const user = process.env.PGUSER;
-    const password = process.env.PGPASSWORD;
-    const database = process.env.PGDATABASE;
-    const port = Number(process.env.PGPORT || 5432);
+    const connectionString = process.env.DATABASE_URL;
 
-    if (!host || !user || !password || !database) {
-      throw new Error('Missing PostgreSQL environment variables');
+    if (!connectionString) {
+      throw new Error('Missing DATABASE_URL environment variable');
     }
 
+    // simplistic check: if not localhost/127.0.0.1, assume remote => enable SSL
+    const isLocal = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
+
     pool = new Pool({
-      host,
-      user,
-      password,
-      database,
-      port,
-      ssl: (process.env.PGSSL === 'true' || process.env.NODE_ENV === 'production') ? { rejectUnauthorized: false } : undefined,
+      connectionString,
+      ssl: isLocal ? undefined : { rejectUnauthorized: false },
       max: Number(process.env.PG_CONNECTION_LIMIT || 10),
       idleTimeoutMillis: 60000,
       allowExitOnIdle: false,
